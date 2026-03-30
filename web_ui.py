@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import logging
 from flask import Flask, request, render_template_string
