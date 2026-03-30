@@ -174,6 +174,71 @@ def upload_media_to_wp(wp_url, token, image_path):
         return None, None
 
 
+import re as _re
+
+# ==========================================
+# 🔗 5-A. CTA 링크 유효성 검증 & 자동 제거
+# ==========================================
+def validate_cta_links(html_content, timeout=5):
+    """
+    HTML 본문 내 모든 <a href="..."> 링크를 실제 HTTP 요청으로 확인합니다.
+    - 접속 불가 (4xx, 5xx, 타임아웃)인 링크가 포함된 CTA 버튼 <div>를 자동 삭제합니다.
+    - 유효한 링크는 그대로 유지합니다.
+    """
+    import re
+    import requests as req
+
+    # 패턴: href="...." 에서 URL 추출 (단순 '#' 제외)
+    href_pattern = re.compile(r'href=["\']([^"\'#][^"\']*)["\']', re.IGNORECASE)
+    urls = href_pattern.findall(html_content)
+    
+    dead_urls = set()
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; LinkValidator/1.0)'}
+    
+    for url in urls:
+        if not url.startswith('http'):
+            continue
+        try:
+            resp = req.head(url, allow_redirects=True, timeout=timeout, headers=headers)
+            if resp.status_code >= 400:
+                # HEAD 실패 시 GET으로 재시도
+                resp = req.get(url, allow_redirects=True, timeout=timeout, headers=headers, stream=True)
+                if resp.status_code >= 400:
+                    dead_urls.add(url)
+                    print(f"❌ [링크 검증] 접속 불가 ({resp.status_code}): {url}")
+            else:
+                print(f"✅ [링크 검증] 정상 ({resp.status_code}): {url}")
+        except Exception as e:
+            dead_urls.add(url)
+            print(f"❌ [링크 검증] 연결 실패: {url} -> {e}")
+    
+    if not dead_urls:
+        print("✅ [링크 검증] 모든 CTA 링크가 유효합니다.")
+        return html_content
+
+    # 死링크가 포함된 <a> 태그를 텍스트로 변환 (버튼 스타일 div도 함께 제거)
+    cleaned_html = html_content
+    for dead_url in dead_urls:
+        # CTA 버튼 패턴: <div style="text-align:center..."><a href="dead_url"...>...</a></div>
+        # 또는 단순 <a href="dead_url"...>...</a>
+        # div 감싸기 패턴 먼저 시도
+        div_pattern = re.compile(
+            r'<div[^>]*text-align[^>]*center[^>]*>[\s]*<a[^>]*href=["\']' + re.escape(dead_url) + r'["\'][^>]*>.*?</a>[\s]*</div>',
+            re.IGNORECASE | re.DOTALL
+        )
+        cleaned_html, n = div_pattern.subn('', cleaned_html)
+        if n == 0:
+            # div 패턴 없으면 단순 <a> 태그 제거
+            a_pattern = re.compile(
+                r'<a[^>]*href=["\']' + re.escape(dead_url) + r'["\'][^>]*>.*?</a>',
+                re.IGNORECASE | re.DOTALL
+            )
+            cleaned_html = a_pattern.sub('', cleaned_html)
+        print(f"🗑️  [링크 검증] 죽은 링크 제거 완료: {dead_url}")
+
+    return cleaned_html
+
+
 # ==========================================
 # 🚀 5. 워드프레스 포스트 최종 발행
 # ==========================================

@@ -7,7 +7,7 @@ import feedparser
 import google.generativeai as genai
 
 from content_generator import generate_blog_post
-from auto_pipeline import get_wp_token, publish_to_wp, generate_thumbnail, upload_media_to_wp
+from auto_pipeline import get_wp_token, publish_to_wp, generate_thumbnail, upload_media_to_wp, validate_cta_links
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -181,7 +181,11 @@ def index():
             title = generated_data['title']
             body_html = generated_data['content']
             
-            # 2. WP 로그인
+            # 2. CTA 링크 유효성 검증 (존재하지 않는 링크 자동 제거)
+            logging.info("Validating CTA links...")
+            body_html = validate_cta_links(body_html, timeout=5)
+            
+            # 3. WP 로그인
             token = get_wp_token(wp_url, wp_username, wp_password)
             if not token:
                 return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, message="워드프레스 로그인에 실패했습니다. API 설정을 확인하세요.", status="error")
