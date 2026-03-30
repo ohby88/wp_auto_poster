@@ -24,10 +24,17 @@ HTML_TEMPLATE = """
         button:hover { background-color: #ff6b81; }
         .message { margin-top: 20px; padding: 15px; border-radius: 5px; display: none; }
         .success { background-color: #d4edda; color: #155724; display: block; border: 1px solid #c3e6cb;}
-        .error { background-color: #f8d7da; color: #721c24; display: block; border: 1px solid #f5c6cb;}
         .trend-tag:hover { background-color: #d1d8dd; }
+        .settings-btn { background: none; color: #888; border: none; font-size: 14px; text-decoration: underline; cursor: pointer; margin-bottom: 15px; text-align: left; display: block; padding: 0; }
+        .settings-panel { display: none; text-align: left; background: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ddd; }
+        .settings-panel input { width: 100%; padding: 10px; margin-top: 5px; margin-bottom: 10px; font-size: 13px; }
+        .settings-panel label { font-size: 12px; font-weight: bold; color: #555; }
     </style>
     <script>
+        function toggleSettings() {
+            var panel = document.getElementById('settingsPanel');
+            panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
+        }
         function showLoading() {
             document.getElementById('submitBtn').disabled = true;
             document.getElementById('submitBtn').innerText = 'AI가 글과 썸네일을 생성 중입니다... (약 1분 소요)';
@@ -48,6 +55,19 @@ HTML_TEMPLATE = """
         </div>
 
         <form method="POST" onsubmit="showLoading()">
+            <button type="button" class="settings-btn" onclick="toggleSettings()">⚙️ 환경설정 (API 키 및 계정 정보 입력)</button>
+            <div id="settingsPanel" class="settings-panel">
+                <p style="font-size: 12px; margin-top:0; color:#ff4757;">⚠️ 이 페이지를 공유받으셨다면, 본인의 정보를 입력하셔야 작동합니다.</p>
+                <label>Gemini API Key</label>
+                <input type="text" name="gemini_key" value="{{ env_gemini_key }}" placeholder="AIxxxxxxx...">
+                <label>WordPress Site URL</label>
+                <input type="text" name="wp_url" value="{{ env_wp_url }}" placeholder="http://myblog.com">
+                <label>WordPress Admin Username</label>
+                <input type="text" name="wp_user" value="{{ env_wp_user }}" placeholder="admin 아이디">
+                <label>WordPress App Password</label>
+                <input type="password" name="wp_pass" value="{{ env_wp_pass }}" placeholder="앱 비밀번호 24자리">
+            </div>
+
             <input type="text" name="topic" id="topicInput" placeholder="발행할 주제 직접 입력 (예: 청년도약계좌 혜택)" required>
             <button type="submit" id="submitBtn">바로 워드프레스 발행하기</button>
         </form>
@@ -72,17 +92,27 @@ def index():
         logging.error(f"Failed to fetch trends: {e}")
         trending_topics = ["2024년 청년도약계좌", "소상공인 지원금 신청", "애플 신제품 출시일", "해외여행 추천지"]
 
+    load_dotenv()
+    env_gemini_key = os.getenv("GEMINI_API_KEY", "")
+    env_wp_url = os.getenv("WP_URL", "").rstrip('/')
+    env_wp_user = os.getenv("WP_USERNAME", "")
+    env_wp_pass = os.getenv("WP_PASSWORD", "")
+
     if request.method == "POST":
         topic = request.form.get("topic")
-        if not topic:
-            return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, message="주제를 입력해주세요.", status="error")
-            
-        load_dotenv()
-        gemini_api_key = os.getenv("GEMINI_API_KEY")
-        wp_url = os.getenv("WP_URL", "").rstrip('/')
-        wp_username = os.getenv("WP_USERNAME")
-        wp_password = os.getenv("WP_PASSWORD")
+        gemini_api_key = request.form.get("gemini_key") or env_gemini_key
+        wp_url = (request.form.get("wp_url") or env_wp_url).rstrip('/')
+        wp_username = request.form.get("wp_user") or env_wp_user
+        wp_password = request.form.get("wp_pass") or env_wp_pass
         
+        if not topic:
+            return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="주제를 입력해주세요.", status="error")
+            
+        if not gemini_api_key or not wp_password:
+            return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="환경설정에서 API 키와 워드프레스 정보를 모두 입력해주세요.", status="error")
+        
+        # Override environment variables temporarily for this request's logic inside content_generator and auto_pipeline
+        os.environ["GEMINI_API_KEY"] = gemini_api_key
         try:
             # 1. 제미나이 내용 생성 (articles가 None이면 내장 지식으로 생성하도록 수정됨)
             logging.info(f"UI Trigger: Generating post for '{topic}'")
@@ -114,14 +144,14 @@ def index():
             
             if success:
                 msg = f"🎉 <b>성공적으로 발행되었습니다!</b><br><br>작성된 글 제목:<br>[ {title} ]<br><br><a href='{wp_url}' target='_blank' style='color:#007bff; text-decoration:none;'>👉 내 워드프레스 확인 가기</a>"
-                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, message=msg, status="success")
+                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message=msg, status="success")
             else:
-                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, message="워드프레스 발행 중 오류가 발생했습니다.", status="error")
+                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="워드프레스 발행 중 오류가 발생했습니다.", status="error")
                 
         except Exception as e:
-            return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, message=f"에러 발생: {str(e)}", status="error")
+            return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message=f"에러 발생: {str(e)}", status="error")
 
-    return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics)
+    return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
