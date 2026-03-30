@@ -1,4 +1,6 @@
 import os
+import re
+import datetime
 import google.generativeai as genai
 import logging
 from dotenv import load_dotenv
@@ -27,9 +29,15 @@ def generate_blog_post(keyword, articles):
         logging.info("No articles provided. Gemini will use its internal knowledge.")
         articles = []
         
-    # 모델 선택 (빠르고 저렴하며 최신인 gemini-2.5-flash 권장)
+    # 최신 모델로 업데이트 (더 깊이 있는 응답 생성)
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel(
+            'gemini-2.5-pro-preview-03-25',
+            generation_config={
+                "temperature": 1.0,
+                "max_output_tokens": 8192
+            }
+        )
         
         # 기사 내용 포맷팅
         sources_text = ""
@@ -46,38 +54,62 @@ def generate_blog_post(keyword, articles):
             sources_text = "별도의 참고 기사가 제공되지 않았습니다. 당신의 최신 웹 지식 및 자체 정보를 활용하여 포스팅을 매우 자세고 정확하게 작성해주세요."
             
         prompt = f"""
-당신은 월 수익 천만 원을 내는 최상위 SEO 전문 블로거입니다. 
-제공된 주제 '{keyword}'와 뉴스 기사들을 바탕으로, 수익형 정보성 블로그와 완벽하게 동일한 구조와 스타일의 워드프레스 배포용 HTML 코드를 작성하세요.
+당신은 대한민국 최고의 SEO 정보성 블로거이며, 10년 경력의 콘텐츠 마케터입니다.
+아래 주제로 블로그 글을 워드프레스에 바로 발행 가능한 HTML 형식으로 작성해 주세요.
 
-[필수 구조 및 HTML/CSS 가이드라인]
-1. 제목 영역 (눈에 띄는 박스 스타일):
-   - 문서 최상단에 테두리가 있고 배경색이 들어간 박스로 감싼 <h1> 태그를 작성하세요.
-   - 예: <div style="border: 2px solid #ff6b6b; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 20px; background-color: #fff8f8;"><h1 style="color: #333; margin: 0; font-size: 1.8em; font-weight: 800;">{keyword} 핵심 정리</h1></div>
+주제: {keyword}
+오늘 날짜: {__import__('datetime').date.today().strftime('%Y년 %m월 %d일')}
 
-2. 도입부 및 목차 (Table of Contents):
-   - 독자의 묶어두기(체류시간 팽창)를 위해 해결책을 암시하는 흥미 유발 도입부를 2~3단락 작성하세요. 주요 키워드는 <strong>으로 강조하세요.
-   - 글의 전개를 미리 알려주는 '목차(TOC)' 박스를 만드세요. 번호가 중복출력되지 않도록 <ul> 태그의 스타일을 지정하세요.
-   - 예: <div style="background-color: #f8f9fa; padding: 15px 20px; border-radius: 8px; margin-bottom: 30px; border-left: 5px solid #007bff;"><h3 style="margin-top:0;">📝 이 글의 목차</h3><ul style="line-height: 1.6; list-style-type: none; padding-left: 0;"><li>1. ...</li><li>2. ...</li></ul></div>
+[글 작성 지침 - 반드시 준수]
 
-3. 본문 구조 (소제목 + 내용 + 표 + CTA 버튼):
-   - 각 본문 섹션은 '1. 소제목', '2. 소제목' 형태의 <h2> 태그로 시작하며, 시각적으로 매력적으로 스타일링하세요. (예: <h2 style="border-bottom: 2px solid #333; padding-bottom: 5px;">)
-   - 복잡한 내용(특징, 비교, 장단점 등)이 있다면 반드시 한 눈에 들어오는 가독성 좋은 <table>(테이블) 태그로 깔끔하게 정리하세요. (테이블 헤더 <th>에는 회색 계열 배경색 적용)
-   - 줄바꿈을 2~3문장마다 자주 하여 모바일 화면에서 숨막히지 않게 하세요. 불릿 포인트(<ul> <li>)를 적극 활용하세요.
-   - 섹션 사이사이에 독자의 행동을 유도하는 눈에 띄는 CTA(Call to Action) 버튼을 최소 2곳 이상 배치하세요. 
-   - [중요사항] CTA 버튼의 주소(href)에는 절대로 빈 링크나 '#'을 넣지 마세요. 제공된 뉴스 출처 링크나 해당 주제(키워드)와 관련된 공식 홈페이지(예: 정부24, 복지로, 공식 신청사이트 등)의 실제 존재할 가능성이 매우 높은 유효한 URL 주소를 만들어서 삽입하세요.
-   - 버튼 예시: <div style="text-align: center; margin: 30px 0;"><a href="[실질적_참고_URL]" target="_blank" style="background-color: #ff4757; color: white; padding: 15px 30px; border-radius: 30px; text-decoration: none; font-weight: bold; font-size: 1.1em; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">공식 신청 페이지 바로가기 ></a></div>
+★ 글 퀄리티 요구사항:
+- 분량: 최소 2,000자 이상의 풍부하고 실용적인 정보를 담아주세요.
+- 전문성: 해당 주제의 전문가처럼 구체적인 숫자(금액, %, 날짜, 기간 등)와 실제 사례를 들어서 설명하세요.
+- 독창성: 다른 블로그에서 볼 수 없는 핵심 꿀팁과 주의사항을 반드시 포함하세요.
+- SEO: 제목에 핵심 키워드를 포함하고, 자연스럽게 키워드를 본문에 반복하여 검색 최적화를 달성하세요.
+- 신뢰성: 독자가 이 글 하나만 읽어도 해당 주제에 대해 완벽하게 이해할 수 있도록 작성하세요.
 
-4. 강조 빛 형광펜 효과:
-   - 핵심적인 문장이나 절대 놓치면 안 되는 혜택/결론 부분은 노란색 형광펜 효과(<span style="background-color: #fff0b3; font-weight: bold;">핵심 문장</span>)를 주어 시선을 사로잡으세요.
+★ HTML 구조 (아래 형식 엄수):
 
-5. 결론 및 요약:
-   - 마지막에 <h3 style="color: #ff4757;">💡 총평 및 요약</h3>을 만들어 3줄로 내용을 요약하세요.
+1. 제목 박스:
+<div style="border: 3px solid #ff6b6b; padding: 20px; text-align: center; border-radius: 10px; margin-bottom: 25px; background: linear-gradient(135deg, #fff8f8, #fff);"><h1 style="color: #c0392b; margin: 0; font-size: 1.9em; font-weight: 900; line-height: 1.4;">[제목 작성]</h1></div>
 
-오직 워드프레스 에디터(커스텀 HTML 블록)에 바로 복사/붙여넣기 할 수 있는 순수 HTML 태그 구조만 출력하세요. (```html 등의 마크다운 제외)
+2. 핵심요약 박스 (독자 체류시간 증가):
+<div style="background: #fff3cd; border-left: 6px solid #ffc107; padding: 18px 22px; border-radius: 6px; margin-bottom: 25px;"><b>⚡ 이 글의 핵심 요약</b><ul style="margin: 8px 0 0 0; padding-left: 20px; line-height: 2;"><li>포인트 1</li><li>포인트 2</li><li>포인트 3</li></ul></div>
 
-다음은 참고할 최신 뉴스 데이터입니다:
+3. 클릭 유도 도입부 (2~3문단): 독자의 공감을 이끌어내는 상황 묘사 → 이 글이 해결책임을 암시
+
+4. 목차 TOC:
+<div style="background: #f0f4ff; padding: 18px 22px; border-radius: 8px; margin: 25px 0; border-left: 5px solid #3498db;"><h3 style="margin-top: 0; color: #2c3e50;">📋 목차</h3><ul style="line-height: 2; padding-left: 20px; margin: 0;"><li>1. ...</li><li>2. ...</li></ul></div>
+
+5. 본문 섹션 (최소 5개 이상 H2 소제목):
+<h2 style="background: linear-gradient(to right, #3498db, #5dade2); color: white; padding: 12px 18px; border-radius: 6px; font-size: 1.2em;">1. 소제목</h2>
+- 각 섹션마다 반드시 구체적인 수치, 사례, 또는 팁을 담아야 합니다.
+- 비교·정리가 필요할 때는 스타일이 적용된 HTML 테이블 사용:
+<table style="width:100%; border-collapse:collapse; margin: 15px 0;"><thead><tr style="background:#2c3e50; color:white;"><th style="padding:10px; text-align:left;">항목</th><th style="padding:10px;">내용</th></tr></thead><tbody><tr style="background:#f9f9f9;"><td style="padding:10px; border:1px solid #ddd;">...</td><td style="padding:10px; border:1px solid #ddd;">...</td></tr></tbody></table>
+- 형광펜 강조: <span style="background: linear-gradient(to right, #fff176, #ffee58); padding: 2px 5px; font-weight: bold;">핵심 수치나 조건</span>
+- 주의사항 박스: <div style="background:#fff0f0; border:1px solid #ffcccc; padding:14px; border-radius:6px; margin:15px 0;">⚠️ <b>주의사항</b>: ...</div>
+
+6. 중간 CTA 버튼 (섹션 중간에 최소 2곳):
+<div style="text-align:center; margin:30px 0;"><a href="[해당 주제 공식 관련 URL - 정부24, 복지로 등 실제 가능성 높은 URL로]" target="_blank" style="background: linear-gradient(135deg, #e74c3c, #c0392b); color:white; padding:16px 35px; border-radius:30px; text-decoration:none; font-weight:bold; font-size:1.1em; box-shadow:0 4px 15px rgba(231,76,60,0.4); display:inline-block;">🔴 공식 신청하러 가기 ▶</a></div>
+
+7. 결론 요약 박스:
+<div style="background: linear-gradient(135deg, #667eea, #764ba2); color:white; padding:22px; border-radius:10px; margin:30px 0;"><h3 style="margin-top:0;">💡 총정리 및 핵심 행동 지침</h3><p style="line-height:1.8; margin:0;">...</p></div>
+
+8. FAQ 섹션 (자주 묻는 질문 3~5개):
+<h2 style="...와 동일 스타일">❓ 자주 묻는 질문 (FAQ)</h2>
+<details style="border:1px solid #ddd; border-radius:6px; padding:12px; margin-bottom:10px;"><summary style="cursor:pointer; font-weight:bold;">Q. 질문 내용</summary><p style="margin:8px 0 0; color:#555;">A. 상세 답변</p></details>
+
+[절대 금지사항]
+- ```html 마크다운 블록 사용 금지
+- href="#" 같은 빈 링크 사용 금지  
+- 주제와 무관한 일반적 내용 작성 금지
+- 짧고 성의없는 답변 금지
+
+참고 데이터:
 {sources_text}
 """
+
         logging.info("Sending request to Gemini API...")
         response = model.generate_content(prompt)
         

@@ -33,15 +33,39 @@ HTML_TEMPLATE = """
         .settings-panel label { font-size: 12px; font-weight: bold; color: #555; }
     </style>
     <script>
+        // localStorage에 API 키 저장/불러오기
+        function loadSavedSettings() {
+            var savedKey = localStorage.getItem('gemini_key');
+            var savedUrl = localStorage.getItem('wp_url');
+            var savedUser = localStorage.getItem('wp_user');
+            if (savedKey) document.querySelector('input[name=gemini_key]').value = savedKey;
+            if (savedUrl) document.querySelector('input[name=wp_url]').value = savedUrl;
+            if (savedUser) document.querySelector('input[name=wp_user]').value = savedUser;
+        }
+        function saveSettings() {
+            localStorage.setItem('gemini_key', document.querySelector('input[name=gemini_key]').value);
+            localStorage.setItem('wp_url', document.querySelector('input[name=wp_url]').value);
+            localStorage.setItem('wp_user', document.querySelector('input[name=wp_user]').value);
+        }
         function toggleSettings() {
             var panel = document.getElementById('settingsPanel');
             panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
         }
+        function doRecommend() {
+            saveSettings();
+            document.getElementById('hidden_gemini_key').value = document.querySelector('input[name=gemini_key]').value;
+            document.getElementById('hidden_wp_url').value = document.querySelector('input[name=wp_url]').value;
+            document.getElementById('hidden_wp_user').value = document.querySelector('input[name=wp_user]').value;
+            document.getElementById('hidden_wp_pass').value = document.querySelector('input[name=wp_pass]').value;
+            document.getElementById('recommendForm').submit();
+        }
         function showLoading() {
+            saveSettings();
             document.getElementById('submitBtn').disabled = true;
-            document.getElementById('submitBtn').innerText = 'AI가 글과 썸네일을 생성 중입니다... (약 1분 소요)';
+            document.getElementById('submitBtn').innerText = 'AI가 글과 썸네일을 생성 중입니다... (약 1~2분 소요)';
             document.getElementById('loading').style.display = 'block';
         }
+        window.onload = loadSavedSettings;
     </script>
 </head>
 <body>
@@ -51,8 +75,11 @@ HTML_TEMPLATE = """
         
         <form method="POST" id="recommendForm" style="display:inline;">
             <input type="hidden" name="gemini_key" id="hidden_gemini_key">
+            <input type="hidden" name="wp_url" id="hidden_wp_url">
+            <input type="hidden" name="wp_user" id="hidden_wp_user">
+            <input type="hidden" name="wp_pass" id="hidden_wp_pass">
             <input type="hidden" name="action" value="recommend">
-            <button type="button" onclick="document.getElementById('hidden_gemini_key').value=document.querySelector('input[name=\'gemini_key\']').value; document.getElementById('recommendForm').submit();" style="background-color: #f39c12; color: #fff; border: none; padding: 12px; width: 100%; border-radius: 5px; cursor: pointer; font-size: 15px; font-weight: bold; margin-bottom: 20px; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🪄 AI 방문자 폭발 '황금 키워드' 5개 추천받기</button>
+            <button type="button" onclick="doRecommend();" style="background: linear-gradient(135deg, #f39c12, #e67e22); color: #fff; border: none; padding: 14px; width: 100%; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: bold; margin-bottom: 15px; transition: all 0.3s; box-shadow: 0 4px 12px rgba(243,156,18,0.4);">🪄 AI가 직접 찾아주는 '황금 주제' 5개 추천받기</button>
         </form>
 
         <div class="trends" style="margin-bottom: 25px; text-align: left;">
