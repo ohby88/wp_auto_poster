@@ -7,3 +7,6 @@ ENV/
 .env
 .idea/
 .vscode/
+thumbnail.png
+thumbnail.jpg
+*.html
