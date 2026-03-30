@@ -7,7 +7,7 @@ import feedparser
 import google.generativeai as genai
 
 from content_generator import generate_blog_post
-from auto_pipeline import get_wp_token, publish_to_wp, generate_thumbnail, upload_media_to_wp, validate_cta_links
+from auto_pipeline import get_wp_token, publish_to_wp, generate_thumbnail, upload_media_to_wp, validate_cta_links, get_news_based_recommendations
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -79,7 +79,12 @@ HTML_TEMPLATE = """
             <input type="hidden" name="wp_user" id="hidden_wp_user">
             <input type="hidden" name="wp_pass" id="hidden_wp_pass">
             <input type="hidden" name="action" value="recommend">
-            <button type="button" onclick="doRecommend();" style="background: linear-gradient(135deg, #f39c12, #e67e22); color: #fff; border: none; padding: 14px; width: 100%; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: bold; margin-bottom: 15px; transition: all 0.3s; box-shadow: 0 4px 12px rgba(243,156,18,0.4);">🪄 AI가 직접 찾아주는 '황금 주제' 5개 추천받기</button>
+            <button type="button" onclick="doRecommend();" style="background: linear-gradient(135deg, #f39c12, #e67e22); color: #fff; border: none; padding: 14px; width: 100%; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: bold; margin-bottom: 8px; transition: all 0.3s; box-shadow: 0 4px 12px rgba(243,156,18,0.4);">🪄 AI가 직접 찾아주는 '황금 주제' 5개 추천받기</button>
+        </form>
+        <form method="POST" id="newsRecommendForm" style="display:inline;">
+            <input type="hidden" name="gemini_key" id="news_gemini_key">
+            <input type="hidden" name="action" value="news_recommend">
+            <button type="button" onclick="document.getElementById('news_gemini_key').value=document.querySelector('input[name=\'gemini_key\']').value; document.getElementById('newsRecommendForm').submit();" style="background: linear-gradient(135deg, #8e44ad, #6c3483); color: #fff; border: none; padding: 14px; width: 100%; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: bold; margin-bottom: 15px; transition: all 0.3s; box-shadow: 0 4px 12px rgba(142,68,173,0.4);">📰 오늘의 주요 뉴스로 칩덼지는 블로그 주제 추천</button>
         </form>
 
         <div class="trends" style="margin-bottom: 25px; text-align: left;">
@@ -147,6 +152,18 @@ def index():
         wp_username = request.form.get("wp_user") or env_wp_user
         wp_password = request.form.get("wp_pass") or env_wp_pass
         
+        if action == "news_recommend":
+            if not gemini_api_key:
+                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="환경설정에서 API 키를 입력하셔야 드립니다.", status="error")
+            try:
+                logging.info("Fetching news headlines and generating topic recommendations...")
+                news_topics = get_news_based_recommendations(gemini_api_key, num_topics=5)
+                if not news_topics:
+                    return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="뉴스 기반 주제 수집에 실패했습니다. 다시 시도해주세요.", status="error")
+                return render_template_string(HTML_TEMPLATE, trending_topics=news_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, ai_message="📰 오늘의 뉴스를 분석하여 AI가 고른 블로그 주제! (클릭시 입력란에 자동입력)")
+            except Exception as e:
+                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message=f"뉴스 주제 추천 오류: {str(e)}", status="error")
+
         if action == "recommend":
             if not gemini_api_key:
                 return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="환경설정에서 API 키를 입력하셔야 AI 키워드 추천을 받을 수 있습니다.", status="error")

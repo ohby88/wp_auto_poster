@@ -174,6 +174,86 @@ def upload_media_to_wp(wp_url, token, image_path):
         return None, None
 
 
+
+# ==========================================
+# 📰 5-B. 뉴스 기반 추천 주제 생성 (AI + 뉴스 RSS)
+# ==========================================
+def get_news_based_recommendations(api_key, num_topics=5):
+    """
+    한국 주요 뉴스 RSS를 크롤링하여 수집한 헤드라인을 Gemini에 넘기고,
+    독자 유입이 폭발할 만한 수익형 블로그 주제를 추천받습니다.
+    """
+    import feedparser
+    import re
+    import google.generativeai as genai
+
+    # 한국 주요 뉴스 RSS 피드 목록
+    rss_feeds = [
+        "https://www.yonhapnewstv.co.kr/rss",
+        "https://feeds.feedburner.com/yonhap-news",
+        "https://rss.etnews.com/Section901.xml",   # 전자신문 IT
+        "https://www.mk.co.kr/rss/30000001/",      # 매경 경제
+        "https://news.kbs.co.kr/rss/rss_news.xml", # KBS 뉴스
+    ]
+
+    headlines = []
+    seen = set()
+    for feed_url in rss_feeds:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries[:8]:
+                title = entry.get('title', '').strip()
+                if title and title not in seen:
+                    seen.add(title)
+                    headlines.append(title)
+                if len(headlines) >= 40:
+                    break
+        except Exception as e:
+            print(f"  RSS 수집 실패: {feed_url} -> {e}")
+        if len(headlines) >= 40:
+            break
+
+    # RSS 실패 시 Google Trends 폴백
+    if len(headlines) < 5:
+        try:
+            import requests as req
+            r = req.get("https://trends.google.com/trends/trendingsearches/daily/rss?geo=KR",
+                        headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+            feed = feedparser.parse(r.content)
+            for entry in feed.entries[:15]:
+                if entry.title not in seen:
+                    headlines.append(entry.title)
+        except Exception:
+            pass
+
+    if not headlines:
+        return []
+
+    headlines_text = "\n".join(f"- {h}" for h in headlines[:40])
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        prompt = f"""당신은 한국 최고의 SEO 수익형 블로그 전문가입니다.
+아래는 지금 한국에서 이슈가 되고 있는 최신 뉴스 헤드라인입니다.
+
+{headlines_text}
+
+이 중에서 정보성 블로그(생활 정보, 복지, 금융, IT, 건강, 절약 등)로 작성했을 때
+독자 유입(검색량, 클릭률)이 가장 폭발적으로 나올 만한 블로그 주제 {num_topics}개를
+검색하기 좋은 구체적인 문장 형태로 제안해주세요.
+
+형식: 각 주제를 쉼표(,)로만 구분. 다른 말은 절대 금지.
+예시: 2026년 청년도약계좌 신청 방법, 전국민 에너지바우처 신청 기간 및 금액, ...
+"""
+        response = model.generate_content(prompt)
+        topics = [t.strip() for t in response.text.split(',') if t.strip()]
+        return topics[:num_topics]
+    except Exception as e:
+        print(f"❌ AI 주제 추천 실패: {e}")
+        return []
+
+
 import re as _re
 
 # ==========================================
