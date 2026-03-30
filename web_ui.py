@@ -3,6 +3,7 @@ import logging
 from flask import Flask, request, render_template_string
 from dotenv import load_dotenv
 import feedparser
+import google.generativeai as genai
 
 from content_generator import generate_blog_post
 from auto_pipeline import get_wp_token, publish_to_wp, generate_thumbnail, upload_media_to_wp
@@ -47,14 +48,21 @@ HTML_TEMPLATE = """
         <h1>🚀 워드프레스 자동 포스팅</h1>
         <p style="color: #666; margin-bottom: 20px;">원하는 주제를 입력하면 AI가 글과 썸네일을 만들고 바로 발행합니다.</p>
         
+        <form method="POST" id="recommendForm" style="display:inline;">
+            <input type="hidden" name="gemini_key" id="hidden_gemini_key">
+            <input type="hidden" name="action" value="recommend">
+            <button type="button" onclick="document.getElementById('hidden_gemini_key').value=document.querySelector('input[name=\'gemini_key\']').value; document.getElementById('recommendForm').submit();" style="background-color: #f39c12; color: #fff; border: none; padding: 12px; width: 100%; border-radius: 5px; cursor: pointer; font-size: 15px; font-weight: bold; margin-bottom: 20px; transition: background 0.3s; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">🪄 AI 방문자 폭발 '황금 키워드' 5개 추천받기</button>
+        </form>
+
         <div class="trends" style="margin-bottom: 25px; text-align: left;">
-            <p style="font-size: 13px; color: #888; margin-bottom: 10px; font-weight: bold;">🔥 오늘(실시간) 한국 구글 인기 검색어 (클릭 시 자동입력)</p>
+            <p style="font-size: 13px; color: #888; margin-bottom: 10px; font-weight: bold;">{% if ai_message %}{{ ai_message }}{% else %}🔥 오늘(실시간) 한국 구글 인기 검색어 (클릭 시 자동입력){% endif %}</p>
             {% for t in trending_topics %}
                 <span class="trend-tag" onclick="document.getElementById('topicInput').value='{{ t }}';" style="display: inline-block; background: #eef2f5; color: #333; padding: 6px 14px; border-radius: 20px; font-size: 13px; margin: 0 5px 8px 0; cursor: pointer; border: 1px solid #dcdcdc;">#{{ t }}</span>
             {% endfor %}
         </div>
 
         <form method="POST" onsubmit="showLoading()">
+            <input type="hidden" name="action" value="post">
             <button type="button" class="settings-btn" onclick="toggleSettings()">⚙️ 환경설정 (API 키 및 계정 정보 입력)</button>
             <div id="settingsPanel" class="settings-panel">
                 <p style="font-size: 12px; margin-top:0; color:#ff4757;">⚠️ 이 페이지를 공유받으셨다면, 본인의 정보를 입력하셔야 작동합니다.</p>
@@ -86,8 +94,13 @@ def index():
     trending_topics = []
     try:
         url = "https://trends.google.com/trends/trendingsearches/daily/rss?geo=KR"
-        feed = feedparser.parse(url)
-        trending_topics = [entry.title for entry in feed.entries[:10]] # 상위 10개만 추출
+        import requests
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        r = requests.get(url, headers=headers, timeout=5)
+        feed = feedparser.parse(r.content)
+        trending_topics = [entry.title for entry in feed.entries[:10]]
+        if not trending_topics:
+            trending_topics = ["2024년 청년도약계좌", "소상공인 지원금 신청", "애플 신제품 출시일", "해외여행 추천지"]
     except Exception as e:
         logging.error(f"Failed to fetch trends: {e}")
         trending_topics = ["2024년 청년도약계좌", "소상공인 지원금 신청", "애플 신제품 출시일", "해외여행 추천지"]
@@ -99,12 +112,27 @@ def index():
     env_wp_pass = os.getenv("WP_PASSWORD", "")
 
     if request.method == "POST":
+        action = request.form.get("action", "post")
         topic = request.form.get("topic")
         gemini_api_key = request.form.get("gemini_key") or env_gemini_key
         wp_url = (request.form.get("wp_url") or env_wp_url).rstrip('/')
         wp_username = request.form.get("wp_user") or env_wp_user
         wp_password = request.form.get("wp_pass") or env_wp_pass
         
+        if action == "recommend":
+            if not gemini_api_key:
+                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="환경설정에서 API 키를 입력하셔야 AI 키워드 추천을 받을 수 있습니다.", status="error")
+            try:
+                genai.configure(api_key=gemini_api_key)
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                prompt = "당신은 월 1000만원 수익을 내는 한국의 최상위 SEO 블로거입니다. 지금 당장 블로그에 글을 썼을 때 조회수가 폭발적으로 나올 만한(사람들이 엄청나게 검색할 만한) '수익형 정보성 블로그 황금 키워드' 딱 5개만 쉼표(,)로 구분해서 알려주세요. 다른 말은 절대 하지 마세요. 예시: 2024년 청년도약계좌 신청, 소상공인 전기요금 특별지원, 경기패스 환급일, 국민연금 예상수령액 조회, 알뜰교통카드 플러스 혜택"
+                response = model.generate_content(prompt)
+                ai_topics = [t.strip() for t in response.text.split(',') if t.strip()]
+                return render_template_string(HTML_TEMPLATE, trending_topics=ai_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, ai_message="✨ AI가 추천하는 실시간 황금 키워드입니다! (클릭시 자동입력)")
+            except Exception as e:
+                return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message=f"황금 키워드 생성 실패: {str(e)}", status="error")
+
+        # action == "post"
         if not topic:
             return render_template_string(HTML_TEMPLATE, trending_topics=trending_topics, env_gemini_key=env_gemini_key, env_wp_url=env_wp_url, env_wp_user=env_wp_user, env_wp_pass=env_wp_pass, message="주제를 입력해주세요.", status="error")
             
